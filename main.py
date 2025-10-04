@@ -1,176 +1,139 @@
-"""
-Pointer-Gap Scheme Simulation (m = 5)
--------------------------------------
-Implements the pointer-gap protocol ensuring perfect OTP secrecy
-and ≥ (m-1)d = 4d wasted pads at termination.
-"""
-
 import random
 import pandas as pd
 
 
-def simulate_pointer_gap(n=200, d=3, seed=None, max_steps=10000):
-    """
-    Simulate the pointer-gap scheme for m=5 parties.
+class PointerGapProtocol:
+    def __init__(self, n, d, m=5, seed=None):
+        self.n = n
+        self.d = d
+        self.m = m
+        self.seed = seed
+        if seed is not None:
+            random.seed(seed)
 
-    Args:
-        n (int): total number of pads (indices 1..n)
-        d (int): safety gap / max in-flight messages per sender
-        seed (int): RNG seed for reproducibility
-        max_steps (int): safety cap on iterations
+        self.frontiers = [0, d, 2 * d, 3 * d, n + 1]
+        self.direction_up = [True, True, True, True, False]
+        self.inflight = []
+        self.inflight_counts = [0] * m
+        self.used_indices = set()
+        self.trace = []
+        self.step = 0
 
-    Returns:
-        dict with:
-          - frontiers
-          - used indices
-          - wasted pad counts
-          - event trace (pandas DataFrame)
-    """
-    if seed is not None:
-        random.seed(seed)
+    def gap_ok_to_advance(self, i):
+        if i < self.m - 1:
+            return (self.frontiers[i + 1] - (self.frontiers[i] + 1)) >= self.d
+        else:
+            return ((self.frontiers[i] - 1) - self.frontiers[i - 1]) >= self.d
 
-    m = 5
-    frontiers = [0, d, 2 * d, 3 * d, n + 1]
-    direction_up = [True, True, True, True, False]  # P1..P4 ↑, P5 ↓
+    def next_index_for(self, i):
+        return self.frontiers[i] + 1 if self.direction_up[i] else self.frontiers[i] - 1
 
-    def next_index_for(i):
-        return frontiers[i] + 1 if direction_up[i] else frontiers[i] - 1
+    def try_send(self, i):
+        if self.inflight_counts[i] >= self.d:
+            return False
+        if not self.gap_ok_to_advance(i):
+            return False
+        idx = self.next_index_for(i)
+        if idx < 1 or idx > self.n:
+            return False
 
-    inflight = []
-    inflight_counts = [0] * m
-    used_indices = set()
-    trace = []
-    step = 0
-
-    def gap_ok_to_advance(i):
-        if i == 0:
-            return (frontiers[1] - (frontiers[0] + 1)) >= d
-        if i == 1:
-            return (frontiers[2] - (frontiers[1] + 1)) >= d
-        if i == 2:
-            return (frontiers[3] - (frontiers[2] + 1)) >= d
-        if i == 3:
-            return (frontiers[4] - (frontiers[3] + 1)) >= d
-        if i == 4:
-            return ((frontiers[4] - 1) - frontiers[3]) >= d
-
-    def try_send(i):
-        nonlocal inflight, inflight_counts, used_indices
-        if inflight_counts[i] >= d:
-            return False, "inflight_limit"
-
-        if not gap_ok_to_advance(i):
-            return False, "gap_violation"
-
-        idx = next_index_for(i)
-
-        if idx < 1 or idx > n:
-            return False, "out_of_range"
-
-        frontiers[i] = idx
-        inflight.append({"sender": i, "index": idx, "created_step": step})
-        inflight_counts[i] += 1
-        used_indices.add(idx)
-        trace.append(
+        self.frontiers[i] = idx
+        self.inflight.append({"sender": i, "index": idx, "step": self.step})
+        self.inflight_counts[i] += 1
+        self.used_indices.add(idx)
+        self.trace.append(
             {
-                "step": step,
+                "step": self.step,
                 "action": "send",
                 "sender": i + 1,
                 "index": idx,
-                "frontiers": frontiers.copy(),
+                "frontiers": self.frontiers.copy(),
             }
         )
+        return True
 
-        return True, "sent"
-
-    def deliver_one():
-        nonlocal inflight, inflight_counts
-        if not inflight:
+    def deliver_one(self):
+        if not self.inflight:
             return False
-
-        i = random.randrange(len(inflight))
-        msg = inflight.pop(i)
+        i = random.randrange(len(self.inflight))
+        msg = self.inflight.pop(i)
         s, idx = msg["sender"], msg["index"]
-        inflight_counts[s] -= 1
-
-        if direction_up[s]:
-            frontiers[s] = max(frontiers[s], idx)
+        self.inflight_counts[s] -= 1
+        if self.direction_up[s]:
+            self.frontiers[s] = max(self.frontiers[s], idx)
         else:
-            frontiers[s] = min(frontiers[s], idx)
-
-        trace.append(
+            self.frontiers[s] = min(self.frontiers[s], idx)
+        self.trace.append(
             {
-                "step": step,
+                "step": self.step,
                 "action": "deliver",
                 "sender": s + 1,
                 "index": idx,
-                "frontiers": frontiers.copy(),
+                "frontiers": self.frontiers.copy(),
             }
         )
-
         return True
 
-    for step in range(1, max_steps + 1):
-        made_progress = False
-        # deliver up to 3 random messages
-        deliver_count = random.randint(0, min(3, len(inflight)))
-        for _ in range(deliver_count):
-            if deliver_one():
-                made_progress = True
+    def run(self, scenario_senders, max_steps=10000):
+        senders = scenario_senders
+        while self.step < max_steps:
+            self.step += 1
+            made_progress = False
 
-        # attempt sends
-        order = list(range(m))
-        random.shuffle(order)
-        for i in order:
-            while True:
-                ok, _ = try_send(i)
-                if ok:
+            # Deliver some messages
+            deliver_count = random.randint(0, min(3, len(self.inflight)))
+            for _ in range(deliver_count):
+                if self.deliver_one():
                     made_progress = True
-                else:
-                    break
 
-        # possibly deliver one more to unblock
-        if not made_progress and inflight:
-            deliver_one()
+            # Attempt sends
+            random.shuffle(senders)
+            for i in senders:
+                while self.try_send(i):
+                    made_progress = True
 
-        # termination check
-        can_any_send = any(
-            (
-                inflight_counts[i] < d
-                and gap_ok_to_advance(i)
-                and 1 <= next_index_for(i) <= n
+            # Terminate if no progress
+            can_any_send = any(
+                self.inflight_counts[i] < self.d
+                and self.gap_ok_to_advance(i)
+                and 1 <= self.next_index_for(i) <= self.n
+                for i in senders
             )
-            for i in range(m)
-        )
+            
+            if not made_progress and not can_any_send:
+                break
 
-        if not made_progress and not can_any_send:
-            break
-
-    wasted_gap_values = [
-        frontiers[1] - frontiers[0],
-        frontiers[2] - frontiers[1],
-        frontiers[3] - frontiers[2],
-        frontiers[4] - frontiers[3],
-    ]
-
-    wasted_total = sum(wasted_gap_values)
-
-    return {
-        "n": n,
-        "d": d,
-        "final_frontiers": frontiers,
-        "used_indices_count": len(used_indices),
-        "wasted_gap_values": wasted_gap_values,
-        "wasted_total": wasted_total,
-        "trace": pd.DataFrame(trace),
-    }
+        wasted_gap_values = [
+            self.frontiers[1] - self.frontiers[0],
+            self.frontiers[2] - self.frontiers[1],
+            self.frontiers[3] - self.frontiers[2],
+            self.frontiers[4] - self.frontiers[3],
+        ]
+        wasted_total = sum(wasted_gap_values)
+        wasted_pads = self.n - len(self.used_indices)
+        return {
+            "final_frontiers": self.frontiers,
+            "used_indices_count": len(self.used_indices),
+            "wasted_gap_values": wasted_gap_values,
+            "wasted_total": wasted_total,
+            "wasted_pads": wasted_pads,
+            "trace": pd.DataFrame(self.trace),
+        }
 
 
+# Example testing
 if __name__ == "__main__":
-    res = simulate_pointer_gap(n=200, d=5, seed=42, max_steps=10000)
-    print("Final frontiers:", res["final_frontiers"])
-    print("Used indices:", res["used_indices_count"])
-    print("Wasted gaps:", res["wasted_gap_values"])
-    print("Total wasted pads:", res["wasted_total"], f"(≥ 4d = {4*res['d']})")
-    print()
-    print(res["trace"])
+    n, d = 200, 5
+    scenarios = {
+        "S.1": [0],
+        "S.2": [0, 1],
+        "S.3": [0, 1, 2],
+        "S.4": [0, 1, 2, 3],
+        "S.5": [0, 1, 2, 3, 4],
+    }
+    for name, senders in scenarios.items():
+        sim = PointerGapProtocol(n=n, d=d, seed=42)
+        result = sim.run(senders)
+        print(
+            f"{name} -> Wasted pads: {result['wasted_pads']}, Gaps: {result['wasted_gap_values']}"
+        )
