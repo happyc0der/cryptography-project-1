@@ -9,9 +9,7 @@ import random
 import pandas as pd
 
 
-def simulate_pointer_gap(
-    n=200, d=3, seed=None, max_steps=10000, delivery_policy="random"
-):
+def simulate_pointer_gap(n=200, d=3, seed=None, max_steps=10000):
     """
     Simulate the pointer-gap scheme for m=5 parties.
 
@@ -20,7 +18,6 @@ def simulate_pointer_gap(
         d (int): safety gap / max in-flight messages per sender
         seed (int): RNG seed for reproducibility
         max_steps (int): safety cap on iterations
-        delivery_policy (str): "random" or "adversarial"
 
     Returns:
         dict with:
@@ -91,23 +88,7 @@ def simulate_pointer_gap(
         if not inflight:
             return False
 
-        if delivery_policy == "random":
-            i = random.randrange(len(inflight))
-        elif delivery_policy == "adversarial":
-            weights = [1.0 / (step - msg["created_step"] + 1) for msg in inflight]
-            total = sum(weights)
-            probs = [w / total for w in weights]
-            r = random.random()
-            cum = 0
-            i = 0
-            for j, p in enumerate(probs):
-                cum += p
-                if r <= cum:
-                    i = j
-                    break
-        else:
-            i = random.randrange(len(inflight))
-
+        i = random.randrange(len(inflight))
         msg = inflight.pop(i)
         s, idx = msg["sender"], msg["index"]
         inflight_counts[s] -= 1
@@ -131,14 +112,8 @@ def simulate_pointer_gap(
 
     for step in range(1, max_steps + 1):
         made_progress = False
-
-        # deliver 0–3 random messages
-        deliver_count = (
-            random.randint(0, min(3, len(inflight)))
-            if delivery_policy == "random"
-            else random.randint(0, min(1, len(inflight)))
-        )
-
+        # deliver up to 3 random messages
+        deliver_count = random.randint(0, min(3, len(inflight)))
         for _ in range(deliver_count):
             if deliver_one():
                 made_progress = True
@@ -192,7 +167,6 @@ def simulate_pointer_gap(
 
 
 if __name__ == "__main__":
-    # Example run
     res = simulate_pointer_gap(n=200, d=5, seed=42, max_steps=10000)
     print("Final frontiers:", res["final_frontiers"])
     print("Used indices:", res["used_indices_count"])
