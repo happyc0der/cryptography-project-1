@@ -11,8 +11,17 @@ class PointerGapProtocol:
         if seed is not None:
             random.seed(seed)
 
-        self.frontiers = [0, d, 2 * d, 3 * d, n + 1]
-        self.direction_up = [True, True, True, True, False]
+        # First m-1 pointers start at multiples of d and move up
+        # Last pointer starts at n+1 and moves down
+        if m < 2:
+            # Single sender case: one up pointer, with a right boundary at n+1
+            self.frontiers = [0, n + 1] 
+            self.direction_up = [True, False] 
+            self.m = 2  
+        else:
+            self.frontiers = [i * d for i in range(m - 1)] + [n + 1]
+            self.direction_up = [True] * (m - 1) + [False]
+
         self.inflight = []
         self.inflight_counts = [0] * m
         self.used_indices = set()
@@ -103,11 +112,10 @@ class PointerGapProtocol:
             if not made_progress and not can_any_send:
                 break
 
+        # Compute gaps
         wasted_gap_values = [
-            self.frontiers[1] - self.frontiers[0],
-            self.frontiers[2] - self.frontiers[1],
-            self.frontiers[3] - self.frontiers[2],
-            self.frontiers[4] - self.frontiers[3],
+            self.frontiers[j + 1] - self.frontiers[j]
+            for j in range(self.m - 1)
         ]
         wasted_total = sum(wasted_gap_values)
         wasted_pads = self.n - len(self.used_indices)

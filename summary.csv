@@ -1,0 +1,6 @@
+scenario,x,avg_wasted_pads,max_wasted_pads,assignment_baseline,meets_baseline?,avg_time_per_send_seconds
+S.1,1,4,4,4000.0,True,4.965496298011088e-06
+S.2,2,4,4,4000.0,True,5.012656925490322e-06
+S.3,3,4,4,4000.0,True,5.550848078288096e-06
+S.4,4,4,4,4000.0,True,6.499547949264459e-06
+S.5,5,4,4,4000.0,True,7.4836228788670526e-06
