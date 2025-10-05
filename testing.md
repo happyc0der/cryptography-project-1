@@ -1,7 +1,5 @@
 # Testing Guide
 
-## Project Overview
-
 This project has two test files:
 
 1. `test_protocol.py` – checks core correctness:
