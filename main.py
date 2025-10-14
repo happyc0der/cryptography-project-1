@@ -11,13 +11,13 @@ class PointerGapProtocol:
         if seed is not None:
             random.seed(seed)
 
-        # First m-1 pointers start at multiples of d and move up
-        # Last pointer starts at n+1 and moves down
+        # First m - 1 pointers start at multiples of d and move up
+        # Last pointer starts at n + 1 and moves down
         if m < 2:
-            # Single sender case: one up pointer, with a right boundary at n+1
-            self.frontiers = [0, n + 1] 
-            self.direction_up = [True, False] 
-            self.m = 2  
+            # Single sender case: one up pointer, with a right boundary at n + 1
+            self.frontiers = [0, n + 1]
+            self.direction_up = [True, False]
+            self.m = 2
         else:
             self.frontiers = [i * d for i in range(m - 1)] + [n + 1]
             self.direction_up = [True] * (m - 1) + [False]
@@ -40,8 +40,10 @@ class PointerGapProtocol:
     def try_send(self, i):
         if self.inflight_counts[i] >= self.d:
             return False
+
         if not self.gap_ok_to_advance(i):
             return False
+
         idx = self.next_index_for(i)
         if idx < 1 or idx > self.n:
             return False
@@ -59,19 +61,24 @@ class PointerGapProtocol:
                 "frontiers": self.frontiers.copy(),
             }
         )
+
         return True
 
     def deliver_one(self):
         if not self.inflight:
             return False
+
         i = random.randrange(len(self.inflight))
         msg = self.inflight.pop(i)
         s, idx = msg["sender"], msg["index"]
+
         self.inflight_counts[s] -= 1
+
         if self.direction_up[s]:
             self.frontiers[s] = max(self.frontiers[s], idx)
         else:
             self.frontiers[s] = min(self.frontiers[s], idx)
+
         self.trace.append(
             {
                 "step": self.step,
@@ -81,6 +88,7 @@ class PointerGapProtocol:
                 "frontiers": self.frontiers.copy(),
             }
         )
+
         return True
 
     def run(self, scenario_senders, max_steps=10000):
@@ -108,7 +116,7 @@ class PointerGapProtocol:
                 and 1 <= self.next_index_for(i) <= self.n
                 for i in senders
             )
-            
+
             if not made_progress and not can_any_send:
                 break
 
@@ -117,8 +125,10 @@ class PointerGapProtocol:
             self.frontiers[j + 1] - self.frontiers[j]
             for j in range(self.m - 1)
         ]
+
         wasted_total = sum(wasted_gap_values)
         wasted_pads = self.n - len(self.used_indices)
+
         return {
             "final_frontiers": self.frontiers,
             "used_indices_count": len(self.used_indices),
