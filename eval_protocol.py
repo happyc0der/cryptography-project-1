@@ -5,6 +5,7 @@ import statistics as stats
 import pandas as pd
 from main import PointerGapProtocol
 
+
 # Run the protocol with random message delivery and sending, return wasted pads and total sends
 def run_with_random_scheduler(n, d, m, active_senders, seed=None, max_steps=200000):
     if seed is not None:
@@ -43,6 +44,7 @@ def run_with_random_scheduler(n, d, m, active_senders, seed=None, max_steps=2000
     wasted_pads = n - len(sim.used_indices)
     return wasted_pads, send_count
 
+
 # Compare protocol performance across different sender counts against baseline efficiency
 def evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025, max_steps=200000):
     rng = random.Random(seed)
@@ -59,26 +61,35 @@ def evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025, max_steps=200000):
             t0 = time.perf_counter()
             # Run with exactly x parties; scheduler delivers 0 to 3 then attempts 1 send per tick
             wasted, sends = run_with_random_scheduler(
-                n=n, d=d, m=x, active_senders=senders, seed=trial_seed, max_steps=max_steps
+                n=n,
+                d=d,
+                m=x,
+                active_senders=senders,
+                seed=trial_seed,
+                max_steps=max_steps,
             )
             t1 = time.perf_counter()
 
             wastes.append(wasted)
-            per_send_times.append((t1 - t0) / max(sends, 1)) # average time per send
+            per_send_times.append((t1 - t0) / max(sends, 1))  # average time per send
 
         avg_waste = stats.mean(wastes)
         max_waste = max(wastes)
         avg_time_per_send = stats.mean(per_send_times)
 
-        rows.append({
-            "scenario": name,
-            "x": x,
-            "avg_wasted_pads": round(avg_waste, 2),         # waste pads for report
-            "max_wasted_pads": int(max_waste),              # worst case
-            "assignment_baseline": round(baseline, 2),      # ((m_chosen-1)/m_chosen) * n
-            "meets_baseline?": avg_waste < baseline,        # requirement check
-            "avg_time_per_send_seconds": avg_time_per_send, # runtime per message
-        })
+        rows.append(
+            {
+                "scenario": name,
+                "x": x,
+                "avg_wasted_pads": round(avg_waste, 2),  # waste pads for report
+                "max_wasted_pads": int(max_waste),  # worst case
+                "assignment_baseline": round(
+                    baseline, 2
+                ),  # ((m_chosen-1)/m_chosen) * n
+                "meets_baseline?": avg_waste < baseline,  # requirement check
+                "avg_time_per_send_seconds": avg_time_per_send,  # runtime per message
+            }
+        )
 
     # Output results
     df = pd.DataFrame(rows)
@@ -87,6 +98,7 @@ def evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025, max_steps=200000):
     print(df.to_string(index=False))
     print("\nSaved to: summary.csv")
     return df
+
 
 if __name__ == "__main__":
     evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025)

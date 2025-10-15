@@ -122,8 +122,7 @@ class PointerGapProtocol:
 
         # Compute gaps
         wasted_gap_values = [
-            self.frontiers[j + 1] - self.frontiers[j]
-            for j in range(self.m - 1)
+            self.frontiers[j + 1] - self.frontiers[j] for j in range(self.m - 1)
         ]
 
         wasted_total = sum(wasted_gap_values)

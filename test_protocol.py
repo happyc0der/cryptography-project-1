@@ -2,8 +2,10 @@
 import pandas as pd
 from main import PointerGapProtocol
 
+
 def _trace_iter(df):  # keep chronological order
     return df.reset_index(drop=True).iterrows()
+
 
 def test_protocol_rules():
     n, d, m = 200, 5, 5
@@ -30,7 +32,7 @@ def test_protocol_rules():
     inflight = [0] * sim.m
     for _, row in _trace_iter(res["trace"]):
         s = int(row["sender"]) - 1
-        
+
         if row["action"] == "send":
             inflight[s] += 1
         else:
@@ -42,14 +44,16 @@ def test_protocol_rules():
     # frontiers move monotonically in correct directions
     last = [None] * sim.m
     for _, row in _trace_iter(res["trace"]):
-        f = row["frontiers"]; s = int(row["sender"]) - 1
+        f = row["frontiers"]
+        s = int(row["sender"]) - 1
         cur, prev = f[s], last[s]
         if prev is not None:
-            if sim.direction_up[s]: 
+            if sim.direction_up[s]:
                 assert cur >= prev
-            else:                   
+            else:
                 assert cur <= prev
         last[s] = cur
+
 
 # verify protocol produces identical results with the same random seed
 def test_reproducibility_with_seed():
@@ -61,5 +65,6 @@ def test_reproducibility_with_seed():
     assert r1["wasted_gap_values"] == r2["wasted_gap_values"]
     assert r1["wasted_total"] == r2["wasted_total"]
     assert r1["wasted_pads"] == r2["wasted_pads"]
-    pd.testing.assert_frame_equal(r1["trace"].reset_index(drop=True),
-                                  r2["trace"].reset_index(drop=True))
+    pd.testing.assert_frame_equal(
+        r1["trace"].reset_index(drop=True), r2["trace"].reset_index(drop=True)
+    )
