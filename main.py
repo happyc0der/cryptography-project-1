@@ -19,7 +19,7 @@ class PointerGapProtocol:
             self.direction_up = [True, False]
             self.m = 2
         else:
-            self.frontiers = [i * d for i in range(m - 1)] + [n + 1]
+            self.frontiers = [round(i * n / m) for i in range(m)] + [n + 1]
             self.direction_up = [True] * (m - 1) + [False]
 
         self.inflight = []
