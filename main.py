@@ -20,7 +20,7 @@ def trace(n: int, d: int, m: int, steps: int = 14) -> None:
         f"n={n} pads, d={d}, m={m} parties -> "
         f"{proto.layout.count} chunks of c=d={proto.layout.c} pads\n"
     )
-    print(f"{"event":<38}{"reserve map (chunk per party)":<34}pads used")
+    print(f"{'event':<38}{'reserve map (chunk per party)':<34}pads used")
     print("-" * 86)
     print(f"{'initial':<38}{str(proto.views[0].reserve):<34}-")
 
