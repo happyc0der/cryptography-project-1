@@ -1,5 +1,9 @@
 # Perfect-secrecy pad allocation for m parties
 
+[![tests](https://github.com/happyc0der/cryptography-project-1/actions/workflows/tests.yml/badge.svg)](https://github.com/happyc0der/cryptography-project-1/actions/workflows/tests.yml)
+[![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 NYU CS6903/4783, Project 1. Chosen party count: **m = 5** (everything is general
 in `m`; `m = 9` is reported alongside).
 
@@ -214,9 +218,15 @@ for grants. Chunk-reserve never stalls.
 
 ## Running it
 
+Python 3.11 or newer, one dependency (`pytest`).
+
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python main.py
-.venv/bin/python eval_protocol.py
-.venv/bin/python -m pytest -q
+.venv/bin/python main.py           # annotated trace + head-to-head comparison
+.venv/bin/python eval_protocol.py  # the grid; writes summary.csv
+.venv/bin/python -m pytest -q      # 251 tests, about 4 seconds
 ```
+
+## License
+
+MIT - see [LICENSE](LICENSE).
