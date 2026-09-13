@@ -6,6 +6,10 @@
 NYU CS6903/4783, Project 1. Chosen party count: **m = 5** (everything is general
 in `m`; `m = 9` is reported alongside).
 
+📄 **[Full report](https://claude.ai/code/artifact/e789cfb6-54c4-4d0c-8fbf-ca5e43caa5d3)**
+— the protocol, the proofs, the two defects found in the handout's own two-party
+protocol, and the evaluation. This README is the short version.
+
 ## The problem
 
 `m` parties share `n` random `L`-bit one-time pads `k_1..k_n`. Every message is
