@@ -7,6 +7,33 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      # Every column in summary.csv is a deterministic function of the grid
+      # parameters, so the committed results must match what the code produces.
+      # Catches a protocol change that was never re-evaluated.
+      - name: Check summary.csv matches the code
+        run: |
+          python eval_protocol.py --out /tmp/summary.csv > /dev/null
+          diff summary.csv /tmp/summary.csv
+
   test:
     runs-on: ubuntu-latest
     strategy:
