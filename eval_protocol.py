@@ -16,6 +16,7 @@ import statistics
 import time
 
 from protocol import (
+    BaseProtocol,
     ChunkReserveProtocol,
     GrantProtocol,
     StaticPartitionProtocol,
@@ -30,6 +31,12 @@ PROTOCOLS = {
 DELIVERIES = ["random", "adversarial"]
 PRESSURES = ["eager", "lazy"]
 
+# `us_per_send` is deliberately not written to the CSV: it is wall-clock and so
+# differs on every run and every machine, which would make the committed
+# summary.csv show a spurious diff each time anyone runs the evaluation. Every
+# column below is a deterministic function of (protocol, m, d, n, schedule), so
+# re-running the grid reproduces the file byte for byte. The timing is reported
+# on stdout instead, where a machine-dependent number belongs.
 FIELDS = [
     "protocol",
     "m",
@@ -41,11 +48,18 @@ FIELDS = [
     "proved_bound",
     "max_blocked",
     "avg_sends",
-    "us_per_send",
 ]
 
 
-def measure(cls, *, n, d, m, schedule, seeds):
+def measure(
+    cls: type[BaseProtocol],
+    *,
+    n: int,
+    d: int,
+    m: int,
+    schedule: str,
+    seeds: int,
+) -> dict[str, object]:
     """Run one cell of the grid over every delivery order and pressure."""
     wastes, blocks, sends, per_send = [], [], [], []
     bound = None
@@ -82,7 +96,7 @@ def measure(cls, *, n, d, m, schedule, seeds):
     }
 
 
-def table(rows, columns, title):
+def table(rows: list[dict[str, object]], columns: list[str], title: str) -> None:
     print(f"\n{title}")
     widths = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in columns}
     line = "  ".join(c.ljust(widths[c]) for c in columns)
@@ -116,7 +130,7 @@ def main() -> None:
                     rows.append(row)
 
     with open(args.out, "w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=FIELDS)
+        writer = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -128,8 +142,15 @@ def main() -> None:
     ]
     table(
         focus,
-        ["protocol", "schedule", "avg_wasted", "max_wasted", "proved_bound",
-         "max_blocked", "avg_sends"],
+        [
+            "protocol",
+            "schedule",
+            "avg_wasted",
+            "max_wasted",
+            "proved_bound",
+            "max_blocked",
+            "avg_sends",
+        ],
         f"m = 5, d = 5, n = {args.n}: one party (or mostly one) does the talking",
     )
 
@@ -137,7 +158,9 @@ def main() -> None:
     worst_by_d = []
     for name in PROTOCOLS:
         for d in (1, 2, 5, 10, 20):
-            cells = [r for r in rows if r["protocol"] == name and r["m"] == 5 and r["d"] == d]
+            cells = [
+                r for r in rows if r["protocol"] == name and r["m"] == 5 and r["d"] == d
+            ]
             worst_by_d.append(
                 {
                     "protocol": name,
@@ -150,15 +173,14 @@ def main() -> None:
     table(
         worst_by_d,
         ["protocol", "d", "worst_wasted", "proved_bound", "worst_blocked"],
-        f"m = 5, n = {args.n}: worst case over every schedule, delivery order and pressure",
+        f"m = 5, n = {args.n}: worst case over every schedule, "
+        "delivery order and pressure",
     )
 
     # --- the point of the design: waste does not grow with n -----------------
     scaling = []
     for n in (args.n, args.n * 4, args.n * 16):
-        cell = measure(
-            ChunkReserveProtocol, n=n, d=5, m=5, schedule="single", seeds=1
-        )
+        cell = measure(ChunkReserveProtocol, n=n, d=5, m=5, schedule="single", seeds=1)
         cell["protocol"] = "chunk-reserve"
         scaling.append(cell)
     table(
@@ -167,7 +189,14 @@ def main() -> None:
         "chunk-reserve, m = 5, d = 5: waste is flat in n",
     )
 
-    print(f"\nFull grid ({len(rows)} rows) written to {args.out}")
+    slowest = max(rows, key=lambda r: r["us_per_send"])
+    print(
+        f"\nThroughput: {statistics.mean([r['us_per_send'] for r in rows]):.1f} us "
+        f"per message on average, {slowest['us_per_send']:.1f} us at worst "
+        f"({slowest['protocol']}, m={slowest['m']}, d={slowest['d']}). "
+        "Machine-dependent, so it is not written to the CSV."
+    )
+    print(f"Full grid ({len(rows)} rows) written to {args.out}")
 
 
 if __name__ == "__main__":

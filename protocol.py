@@ -39,7 +39,7 @@ drive them interchangeably.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 DATA = "data"
 REQUEST = "request"
@@ -230,9 +230,7 @@ class ChunkReserveProtocol(BaseProtocol):
         chunk_size: int | None = None,
         sender_observes_delivery: bool = True,
     ) -> None:
-        super().__init__(
-            n, d, m, sender_observes_delivery=sender_observes_delivery
-        )
+        super().__init__(n, d, m, sender_observes_delivery=sender_observes_delivery)
         # c = d is the smallest chunk size that keeps the protocol wait-free;
         # `chunk_size` exists so the tests can show that c = d - 1 stalls.
         self.layout = ChunkLayout(n, chunk_size if chunk_size is not None else d)
@@ -241,9 +239,7 @@ class ChunkReserveProtocol(BaseProtocol):
                 f"n={n} gives only {self.layout.count} chunks of {self.layout.c}; "
                 f"need at least m={m}"
             )
-        self.views = [
-            _Ledger(reserve=list(range(m)), next_chunk=m) for _ in range(m)
-        ]
+        self.views = [_Ledger(reserve=list(range(m)), next_chunk=m) for _ in range(m)]
         self.cursors = [_Cursor(current=j) for j in range(m)]
 
     # --- party actions -------------------------------------------------------
@@ -294,9 +290,7 @@ class ChunkReserveProtocol(BaseProtocol):
         return self.m * (2 * self.layout.c - 1) + tail
 
     def waste_breakdown(self) -> dict[str, int]:
-        held_reserves = {
-            r for v in self.views for r in v.reserve if r is not None
-        }
+        held_reserves = {r for v in self.views for r in v.reserve if r is not None}
         in_current = sum(
             self.layout.size(cur.current) - cur.pos for cur in self.cursors
         )
@@ -454,9 +448,7 @@ class GrantProtocol(BaseProtocol):
         self.low_water = 2 * self.layout.c
         # Pads sitting in each pool, kept in step with `pool` so that `tick`
         # stays O(m) rather than O(number of chunks).
-        self._pool_pads = [
-            sum(self.layout.size(c) for c in pool) for pool in self.pool
-        ]
+        self._pool_pads = [sum(self.layout.size(c) for c in pool) for pool in self.pool]
 
     # --- accounting ----------------------------------------------------------
     def _remaining(self, j: int) -> int:

@@ -20,8 +20,8 @@ from protocol import (
     BaseProtocol,
     ChunkReserveProtocol,
     GrantProtocol,
-    PadReuseError,
     Message,
+    PadReuseError,
     StaticPartitionProtocol,
     TwoPartyPointerProtocol,
 )

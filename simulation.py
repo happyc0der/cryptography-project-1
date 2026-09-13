@@ -10,12 +10,16 @@ because the simulator happened to deliver things promptly will be caught here.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from protocol import DATA, BaseProtocol, Message, PadReuseError
 
 # --- delivery policies -------------------------------------------------------
 # Each takes the in-flight list (oldest first) and returns the index to deliver.
+# They share one signature so DELIVERY_POLICIES can be indexed by name; the
+# deterministic ones ignore `rng`.
+DeliveryPolicy = Callable[[list[Message], random.Random], int]
 
 
 def deliver_random(inflight: list[Message], rng: random.Random) -> int:
@@ -45,7 +49,7 @@ def deliver_adversarial(inflight: list[Message], rng: random.Random) -> int:
     return max(i for i, msg in enumerate(inflight) if msg.sender == busiest)
 
 
-DELIVERY_POLICIES = {
+DELIVERY_POLICIES: dict[str, DeliveryPolicy] = {
     "random": deliver_random,
     "fifo": deliver_fifo,
     "lifo": deliver_lifo,
@@ -129,7 +133,7 @@ class Network:
         assert self.has_room(msg.sender), "network bound violated"
         self.inflight.append(msg)
 
-    def pop(self, policy, rng: random.Random) -> Message | None:
+    def pop(self, policy: DeliveryPolicy, rng: random.Random) -> Message | None:
         if not self.inflight:
             return None
         return self.inflight.pop(policy(self.inflight, rng))
