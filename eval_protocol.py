@@ -1,104 +1,174 @@
-# eval_protocol.py
+"""Evaluation: how many pads does each protocol waste, and when does it stall?
+
+Every row aggregates over delivery orders, network pressure and seeds, and
+reports the *worst* case as well as the average - a protocol that is only frugal
+on a well-behaved network has not solved the problem.
+
+    python eval_protocol.py                # default grid, writes summary.csv
+    python eval_protocol.py --n 20000 --seeds 5
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import statistics
 import time
-import random
-import statistics as stats
-import pandas as pd
-from main import PointerGapProtocol
+
+from protocol import (
+    ChunkReserveProtocol,
+    GrantProtocol,
+    StaticPartitionProtocol,
+)
+from simulation import SCHEDULES, Schedule, run
+
+PROTOCOLS = {
+    "chunk-reserve": ChunkReserveProtocol,
+    "grant": GrantProtocol,
+    "static-partition": StaticPartitionProtocol,
+}
+DELIVERIES = ["random", "adversarial"]
+PRESSURES = ["eager", "lazy"]
+
+FIELDS = [
+    "protocol",
+    "m",
+    "d",
+    "n",
+    "schedule",
+    "avg_wasted",
+    "max_wasted",
+    "proved_bound",
+    "max_blocked",
+    "avg_sends",
+    "us_per_send",
+]
 
 
-# Run the protocol with random message delivery and sending, return wasted pads and total sends
-def run_with_random_scheduler(n, d, m, active_senders, seed=None, max_steps=200000):
-    if seed is not None:
-        random.seed(seed)
-
-    sim = PointerGapProtocol(n=n, d=d, m=m, seed=seed)
-    send_count = 0
-    step = 0
-
-    while step < max_steps:
-        step += 1
-        made_progress = False
-
-        # Random (0 to 3) deliveries
-        deliver_count = random.randint(0, min(3, len(sim.inflight)))
-        for _ in range(deliver_count):
-            if sim.deliver_one():
-                made_progress = True
-
-        # Pick 1 active sender at random and attempt 1 send
-        choice = random.choice(active_senders)
-        if sim.try_send(choice):
-            made_progress = True
-            send_count += 1
-
-        # Stop only if no progress, nobody can send, and nothing left to deliver
-        can_any_send = any(
-            sim.inflight_counts[i] < sim.d
-            and sim.gap_ok_to_advance(i)
-            and 1 <= sim.next_index_for(i) <= sim.n
-            for i in active_senders
-        )
-        if not made_progress and not can_any_send and len(sim.inflight) == 0:
-            break
-
-    wasted_pads = n - len(sim.used_indices)
-    return wasted_pads, send_count
+def measure(cls, *, n, d, m, schedule, seeds):
+    """Run one cell of the grid over every delivery order and pressure."""
+    wastes, blocks, sends, per_send = [], [], [], []
+    bound = None
+    for delivery in DELIVERIES:
+        for pressure in PRESSURES:
+            for seed in range(seeds):
+                proto = cls(n, d, m)
+                bound = getattr(proto, "waste_bound", lambda: None)()
+                start = time.perf_counter()
+                result = run(
+                    proto,
+                    schedule=Schedule(schedule, m),
+                    delivery=delivery,
+                    pressure=pressure,
+                    seed=seed,
+                )
+                elapsed = time.perf_counter() - start
+                wastes.append(result.wasted)
+                blocks.append(result.blocked)
+                sends.append(result.sends)
+                per_send.append(1e6 * elapsed / max(result.sends, 1))
+    return {
+        "protocol": cls.__name__,
+        "m": m,
+        "d": d,
+        "n": n,
+        "schedule": schedule,
+        "avg_wasted": round(statistics.mean(wastes), 1),
+        "max_wasted": max(wastes),
+        "proved_bound": bound if bound is not None else "",
+        "max_blocked": max(blocks),
+        "avg_sends": round(statistics.mean(sends), 1),
+        "us_per_send": round(statistics.mean(per_send), 2),
+    }
 
 
-# Compare protocol performance across different sender counts against baseline efficiency
-def evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025, max_steps=200000):
-    rng = random.Random(seed)
-    scenarios = {f"S.{x}": list(range(x)) for x in range(1, m_chosen + 1)}
-    baseline = ((m_chosen - 1) / m_chosen) * n
+def table(rows, columns, title):
+    print(f"\n{title}")
+    widths = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in columns}
+    line = "  ".join(c.ljust(widths[c]) for c in columns)
+    print(line)
+    print("-" * len(line))
+    for r in rows:
+        print("  ".join(str(r[c]).ljust(widths[c]) for c in columns))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n", type=int, default=5000)
+    ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--out", default="summary.csv")
+    args = ap.parse_args()
 
     rows = []
-    for name, senders in scenarios.items():
-        x = len(senders)
-        wastes, per_send_times = [], []
+    for name, cls in PROTOCOLS.items():
+        for m in (5, 9):
+            for d in (1, 2, 5, 10, 20):
+                for schedule in SCHEDULES:
+                    row = measure(
+                        cls,
+                        n=args.n,
+                        d=d,
+                        m=m,
+                        schedule=schedule,
+                        seeds=args.seeds,
+                    )
+                    row["protocol"] = name
+                    rows.append(row)
 
-        for _ in range(trials):
-            trial_seed = rng.randrange(10**9)
-            t0 = time.perf_counter()
-            # Run with exactly x parties; scheduler delivers 0 to 3 then attempts 1 send per tick
-            wasted, sends = run_with_random_scheduler(
-                n=n,
-                d=d,
-                m=x,
-                active_senders=senders,
-                seed=trial_seed,
-                max_steps=max_steps,
+    with open(args.out, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    # --- headline: the case the static partition cannot handle ---------------
+    focus = [
+        r
+        for r in rows
+        if r["m"] == 5 and r["d"] == 5 and r["schedule"] in ("single", "skewed")
+    ]
+    table(
+        focus,
+        ["protocol", "schedule", "avg_wasted", "max_wasted", "proved_bound",
+         "max_blocked", "avg_sends"],
+        f"m = 5, d = 5, n = {args.n}: one party (or mostly one) does the talking",
+    )
+
+    # --- waste vs d, worst case over every schedule --------------------------
+    worst_by_d = []
+    for name in PROTOCOLS:
+        for d in (1, 2, 5, 10, 20):
+            cells = [r for r in rows if r["protocol"] == name and r["m"] == 5 and r["d"] == d]
+            worst_by_d.append(
+                {
+                    "protocol": name,
+                    "d": d,
+                    "worst_wasted": max(c["max_wasted"] for c in cells),
+                    "proved_bound": cells[0]["proved_bound"],
+                    "worst_blocked": max(c["max_blocked"] for c in cells),
+                }
             )
-            t1 = time.perf_counter()
+    table(
+        worst_by_d,
+        ["protocol", "d", "worst_wasted", "proved_bound", "worst_blocked"],
+        f"m = 5, n = {args.n}: worst case over every schedule, delivery order and pressure",
+    )
 
-            wastes.append(wasted)
-            per_send_times.append((t1 - t0) / max(sends, 1))  # average time per send
-
-        avg_waste = stats.mean(wastes)
-        max_waste = max(wastes)
-        avg_time_per_send = stats.mean(per_send_times)
-
-        rows.append(
-            {
-                "scenario": name,
-                "x": x,
-                "avg_wasted_pads": round(avg_waste, 2),  # waste pads for report
-                "max_wasted_pads": int(max_waste),  # worst case
-                "assignment_baseline": round(
-                    baseline, 2
-                ),  # ((m_chosen-1)/m_chosen) * n
-                "meets_baseline?": avg_waste < baseline,  # requirement check
-                "avg_time_per_send_seconds": avg_time_per_send,  # runtime per message
-            }
+    # --- the point of the design: waste does not grow with n -----------------
+    scaling = []
+    for n in (args.n, args.n * 4, args.n * 16):
+        cell = measure(
+            ChunkReserveProtocol, n=n, d=5, m=5, schedule="single", seeds=1
         )
+        cell["protocol"] = "chunk-reserve"
+        scaling.append(cell)
+    table(
+        scaling,
+        ["protocol", "n", "max_wasted", "proved_bound", "avg_sends"],
+        "chunk-reserve, m = 5, d = 5: waste is flat in n",
+    )
 
-    # Output results
-    df = pd.DataFrame(rows)
-    df.to_csv("summary.csv", index=False)
-    print("\n=== Summary ===")
-    print(df.to_string(index=False))
-    print("\nSaved to: summary.csv")
-    return df
+    print(f"\nFull grid ({len(rows)} rows) written to {args.out}")
 
 
 if __name__ == "__main__":
-    evaluate(n=5000, d=5, m_chosen=5, trials=200, seed=2025)
+    main()
