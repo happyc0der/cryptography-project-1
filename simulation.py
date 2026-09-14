@@ -78,9 +78,42 @@ class Schedule:
         self._cursor = 0
         self._burst_party = self.active[0]
         self._burst_left = 0
+        self._spoken: set[int] = set()  # one_shot: who has already spoken
+
+    def live(self) -> list[int]:
+        """Parties this schedule might still pick.
+
+        The driver stops when none of these can send.  It is not the same as
+        ``active``: under ``one_shot`` the silent parties still *hold* usable
+        pads, they are simply never asked again, and testing them would keep
+        the run alive forever.
+        """
+        if self.kind == "one_shot":
+            unspoken = [k for k in self.active[1:] if k not in self._spoken]
+            return [self.active[0], *unspoken]
+        return self.active
+
+    def on_sent(self, j: int) -> None:
+        """Told when a pick actually resulted in a send.
+
+        Only ``one_shot`` needs this.  Advancing on the *pick* would let a
+        party be skipped whenever the network happened to be full, which would
+        make the worst-case construction depend on delivery luck.
+        """
+        if self.kind == "one_shot":
+            self._spoken.add(j)
 
     def pick(self, rng: random.Random, d: int) -> int:
         if self.kind == "single":
+            return self.active[0]
+        if self.kind == "one_shot":
+            # The worst case for waste: every party but the first sends exactly
+            # one message and then falls silent, stranding the rest of the chunk
+            # it opened *and* the fresh reserve that send earned it.  The first
+            # party then drains the supply.
+            for k in self.active[1:]:
+                if k not in self._spoken:
+                    return k
             return self.active[0]
         if self.kind == "round_robin":
             self._cursor = (self._cursor + 1) % len(self.active)
@@ -100,7 +133,7 @@ class Schedule:
         raise ValueError(f"unknown schedule {self.kind!r}")
 
 
-SCHEDULES = ["single", "round_robin", "uniform", "skewed", "bursty"]
+SCHEDULES = ["single", "round_robin", "uniform", "skewed", "bursty", "one_shot"]
 
 
 # --- the network -------------------------------------------------------------
@@ -256,6 +289,7 @@ def run(
             msg = proto.send(j)
             record(msg)
             net.inject(msg)
+            schedule.on_sent(j)
             per_party[j] += 1
             sends += 1
             busy = True
@@ -263,7 +297,7 @@ def run(
         idle = 0 if busy else idle + 1
         if idle > 3:
             drain()
-            if not any(proto.can_send(k) for k in schedule.active):
+            if not any(proto.can_send(k) for k in schedule.live()):
                 break
             idle = 0
 

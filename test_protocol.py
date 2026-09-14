@@ -189,7 +189,75 @@ def test_waste_does_not_grow_with_n(n):
     """The bound is O(m*d) with no n in it; confirm the simulation agrees."""
     proto = ChunkReserveProtocol(n, d=5, m=5)
     result = run(proto, schedule=Schedule("single", 5), delivery="random", seed=0)
-    assert result.wasted <= 5 * (2 * 5 - 1)
+    assert result.wasted <= proto.waste_bound()
+
+
+def _strand_the_most(n, d, m):
+    """Drive the schedule that strands the most pads possible.
+
+    Every party but 0 sends exactly one message: that opens its current chunk,
+    leaving c-1 pads behind, and the delivery earns it a fresh reserve worth c
+    more, for 2c-1 each.  Party 0 then drains the supply and stops the instant
+    its own reserve goes None - the moment the last chunk is handed out - so it
+    strands the rest of the chunk it is holding rather than finishing it.
+    """
+    proto = ChunkReserveProtocol(n, d, m)
+    used = set()
+    for j in range(1, m):
+        msg = proto.send(j)
+        used.add(msg.pad)
+        proto.deliver(msg)
+    while proto.can_send(0):
+        msg = proto.send(0)
+        used.add(msg.pad)
+        proto.deliver(msg)
+        if proto.views[0].reserve[0] is None:
+            break
+    return n - len(used), proto
+
+
+@pytest.mark.parametrize("m", [5, 9])
+@pytest.mark.parametrize("d", [1, 2, 5, 11])
+@pytest.mark.parametrize("n", [2_000, 2_003])
+def test_the_waste_bound_is_tight(n, d, m):
+    """waste_bound() is the exact worst case, not just a ceiling.
+
+    Without this the analysis only claims "no worse than"; with it the number
+    is the answer.  It also pins the closed form d(2m-1) - m + (n mod d).
+    """
+    stranded, proto = _strand_the_most(n, d, m)
+    assert stranded == proto.waste_bound()
+    assert stranded == d * (2 * m - 1) - m + (n % d)
+
+
+@pytest.mark.parametrize("m", [5, 9])
+@pytest.mark.parametrize("d", [2, 5, 11])
+def test_one_shot_is_the_worst_schedule_in_the_grid(m, d):
+    """Speaking once and falling silent is worse than never speaking at all.
+
+    A party that never speaks strands one chunk; one that keeps speaking
+    strands nothing.  The damage peaks in between, which is why the five
+    original schedules all under-report the worst case.
+    """
+
+    def worst(kind):
+        return max(
+            run(
+                ChunkReserveProtocol(N, d=d, m=m),
+                schedule=Schedule(kind, m),
+                delivery=delivery,
+                pressure=pressure,
+                seed=seed,
+            ).wasted
+            for delivery in DELIVERIES
+            for pressure in PRESSURES
+            for seed in range(2)
+        )
+
+    one_shot = worst("one_shot")
+    assert one_shot == (m - 1) * (2 * d - 1)
+    assert one_shot > max(worst(k) for k in SCHEDULES if k != "one_shot")
+    assert one_shot <= ChunkReserveProtocol(N, d=d, m=m).waste_bound()
 
 
 def test_beats_the_static_partition_when_one_party_does_the_talking():
