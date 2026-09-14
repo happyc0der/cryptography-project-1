@@ -163,8 +163,9 @@ orders × 2 network pressures × 3 seeds. Full output in `summary.csv`.
 
 "Blocked" counts the times a party wanted to send, the network had room, unused
 pads existed, and the protocol still could not give it one. It is `0` for
-chunk-reserve in all 180 cells; `grant` peaks at 625 and the static partition at
-22 042.
+chunk-reserve in all 180 cells. `grant` peaks at 5 319 across the grid and the
+static partition at 22 408; the table below shows the `m = 5, d = 5` slice,
+where they reach 625 and 22 042.
 
 `one_shot` is the adversary described above, and it is the column that separates
 chunk-reserve from `grant` — under the five original schedules the two were
