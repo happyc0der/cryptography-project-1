@@ -113,18 +113,36 @@ is read globally (the `m`-party question) or per party (the two-party warm-up).
 
 ### Wasted pads
 
-When the chunks run out, each party holds at most one untouched reserve (`c`
-pads) and one partly spent current chunk (`c-1` unused), giving a worst case of
+When the chunks run out, a party holds at most one untouched reserve (`c` pads)
+and one partly spent current chunk (`c-1` unused), so it strands at most `2c-1`.
+The party whose delivery *exhausted* the supply is the exception — its reserve
+became `None` rather than another chunk — so it strands at most `c-1`:
 
 ```
-waste  <=  m * (2d - 1)  +  (n mod c)
+waste  =  (m-1)(2d - 1) + (d - 1) + (n mod d)  =  d(2m - 1) - m + (n mod d)
 ```
 
-**There is no `n` in that bound.** Measured waste is tighter still: exactly
-`(m-1) * d` when `m-1` parties stay quiet — one chunk per silent party — and `0`
-when everyone talks.
+That is an equality, not a ceiling: `test_the_waste_bound_is_tight` constructs
+the schedule that reaches it exactly, at every `(m, d, n)` it tries.
 
-`(m-1) * d` is also the best possible. The handout's two-party lower bound
+**There is no `n` in it.** Doubling the pads costs not one extra stranded pad.
+
+### Where the worst case actually lives
+
+It is not the case you would guess. A party that *never* speaks strands one
+chunk (`d`). A party that keeps speaking strands nothing — when the supply runs
+out its reserve goes `None` and it drains what it holds. The damage peaks
+strictly in between: **a party that sends exactly one message and then falls
+silent** strands `2d-1` — the `d-1` pads left in the chunk that one send opened,
+plus the whole fresh reserve the delivery earned it.
+
+The five original schedules never do that, so they all under-reported. At
+`m = 5, d = 5` they agreed on 20; the real figure is **36**. The `one_shot`
+schedule is that adversary, and it is now in the grid.
+
+When `m-1` parties stay quiet from the start, waste is exactly `(m-1) * d` —
+one chunk each — and that case *is* the best possible. The handout's two-party
+lower bound
 applied to each silent party: if a party must be able to send `d` messages
 without asking anyone first, it has to be holding `d` pads that nobody else may
 touch. With `m-1` parties quiet that is `(m-1) * d` pads out of reach. **So the
@@ -132,42 +150,52 @@ protocol is optimal in this case, not merely good.**
 
 ## Results
 
-`python eval_protocol.py` — 150 grid cells, each the worst case over 4 delivery
+`python eval_protocol.py` — 180 grid cells, each the worst case over 4 delivery
 orders × 2 network pressures × 3 seeds. Full output in `summary.csv`.
 
-`m = 5`, `d = 5`, `n = 5000`:
+`m = 5`, `d = 5`, `n = 5000`, wasted pads by schedule:
 
-| | wasted: one party talks | wasted: mostly one | blocked: one party talks | blocked: mostly one |
+| | one party talks | mostly one | **one_shot** | everyone talks |
 |---|---|---|---|---|
-| **chunk-reserve** | **20** | **0** | **0** | **0** |
-| grant | 20 | 0 | 16 | 625 |
-| static-partition | 4000 | 0 | 8 | 22042 |
+| **chunk-reserve** | 20 | 0 | **36** | 0 |
+| grant | 20 | 0 | 56 | 0 |
+| static-partition | 4000 | 0 | 3996 | 0 |
 
 "Blocked" counts the times a party wanted to send, the network had room, unused
-pads existed, and the protocol still could not give it one.
+pads existed, and the protocol still could not give it one. It is `0` for
+chunk-reserve in all 180 cells; `grant` peaks at 625 and the static partition at
+22 042.
+
+`one_shot` is the adversary described above, and it is the column that separates
+chunk-reserve from `grant` — under the five original schedules the two were
+indistinguishable on waste.
 
 Worst case over every schedule, delivery order and pressure, `m = 5`, `n = 5000`:
 
-| d | chunk-reserve | proved bound | static-partition |
-|---|---|---|---|
-| 1 | 4 | 5 | 4000 |
-| 2 | 8 | 15 | 4000 |
-| 5 | 20 | 45 | 4000 |
-| 10 | 40 | 95 | 4000 |
-| 20 | 80 | 195 | 4000 |
+| d | chunk-reserve | exact bound | grant | static-partition |
+|---|---|---|---|---|
+| 1 | 4 | 4 | 4 | 4000 |
+| 2 | 12 | 13 | 20 | 4000 |
+| 5 | 36 | 40 | 56 | 4000 |
+| 10 | 76 | 85 | 146 | 4000 |
+| 20 | 156 | 175 | 316 | 4000 |
 
-Waste tracks `(m-1)*d` and ignores `n` entirely:
+The grid reaches `(m-1)(2d-1)`; the last `d-1` of the bound needs the draining
+party to stop mid-chunk too, which no schedule can express — a unit test drives
+it directly.
+
+Even at the worst case, waste ignores `n` entirely:
 
 | n | wasted | messages sent |
 |---|---|---|
-| 5 000 | 20 | 4 980 |
-| 20 000 | 20 | 19 980 |
-| 80 000 | 20 | 79 980 |
+| 5 000 | 36 | 4 969 |
+| 20 000 | 36 | 19 969 |
+| 80 000 | 36 | 79 969 |
 
-At `m = 9` the same pattern holds with `(m-1)*d = 8d`: 8 wasted at `d = 1`, 160 at
-`d = 20`. Throughput is about 3–4 µs per message, dominated by the simulator
-rather than the protocol — the protocol itself is a couple of integer
-comparisons per send.
+At `m = 9` the pattern holds against `(m-1)(2d-1) = 8(2d-1)`: 8 wasted at
+`d = 1`, 72 at `d = 5`, 312 at `d = 20`. Throughput is about 3–4 µs per message,
+dominated by the simulator rather than the protocol — the protocol itself is a
+couple of integer comparisons per send.
 
 ## Two notes on the handout's two-party protocol
 
@@ -218,8 +246,8 @@ for grants. Chunk-reserve never stalls.
 | `simulation.py` | network with the `d` bound, delivery adversaries, send schedules, the driver and the pad-reuse check |
 | `main.py` | annotated trace plus the head-to-head comparison |
 | `eval_protocol.py` | the grid; writes `summary.csv` |
-| `test_protocol.py` | 251 tests — see `testing.md` |
-| `summary.csv` | the full 150-cell grid, regenerated by `eval_protocol.py` and checked in CI |
+| `test_protocol.py` | 310 tests — see `testing.md` |
+| `summary.csv` | the full 180-cell grid, regenerated by `eval_protocol.py` and checked in CI |
 | `report.pdf` | the full report, 13 pages |
 | `testing.md` | what each test pins down, and how secrecy is checked |
 | `pyproject.toml` | ruff lint and format configuration |
@@ -234,7 +262,7 @@ Python 3.11 or newer, one dependency (`pytest`).
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python main.py           # annotated trace + head-to-head comparison
 .venv/bin/python eval_protocol.py  # the grid; writes summary.csv
-.venv/bin/python -m pytest -q      # 251 tests, about 4 seconds
+.venv/bin/python -m pytest -q      # 310 tests, about 8 seconds
 ```
 
 Both scripts take flags:
@@ -267,7 +295,7 @@ The four knobs, from most to least forgiving:
 
 | knob | values | what it varies |
 |---|---|---|
-| `schedule` | `single`, `round_robin`, `uniform`, `skewed`, `bursty` | who talks, and how unevenly |
+| `schedule` | `single`, `round_robin`, `uniform`, `skewed`, `bursty`, `one_shot` | who talks, and how unevenly; `one_shot` is the worst case for waste |
 | `delivery` | `random`, `fifo`, `lifo`, `adversarial` | which undelivered message the network hands over next |
 | `pressure` | `eager`, `lazy` | `lazy` delivers nothing until a party is starved, so the backlog sits at `d` all run |
 | `bound_mode` | `global`, `per_party` | whether `d` caps total undelivered messages or each sender's |

@@ -211,12 +211,21 @@ class ChunkReserveProtocol(BaseProtocol):
     ``test_protocol.py`` demonstrates.  The argument only uses "at most ``d``
     undelivered", so it holds whether that bound is read globally or per party.
 
-    **Waste.**  When the chunks run out each party is holding at most one
-    untouched reserve (``c`` pads) and one partly used current chunk (``c - 1``
-    unused pads), so at most ``m * (2d - 1)`` pads are wasted, plus whatever the
-    final chunk absorbed from ``n % c``.  An idle party's current chunk *is* its
-    reserve, so it wastes only ``d``.  Crucially the bound does not mention
-    ``n``: doubling the number of pads does not cost a single extra wasted pad.
+    **Waste.**  When the chunks run out a party holds at most one untouched
+    reserve (``c`` pads) and one partly used current chunk (``c - 1`` unused),
+    so it strands at most ``2c - 1``.  The party whose delivery exhausted the
+    supply is the exception - its reserve became ``None`` instead of another
+    chunk - so it strands at most ``c - 1``, giving
+
+        waste  <=  (m-1)(2d-1) + (d-1) + (n mod d)  =  d(2m-1) - m + (n mod d)
+
+    and that is *exact*: ``test_the_waste_bound_is_tight`` constructs the
+    schedule reaching it.  The construction is m-1 parties each sending exactly
+    one message and then falling silent, which is worse than either extreme -
+    a party that never speaks strands only ``d``, and one that keeps speaking
+    strands nothing.  The ``one_shot`` schedule in :mod:`simulation` is that
+    adversary.  Crucially the bound does not mention ``n``: doubling the number
+    of pads does not cost a single extra stranded pad.
     """
 
     name = "chunk-reserve"
@@ -285,9 +294,23 @@ class ChunkReserveProtocol(BaseProtocol):
         return self.views[0].next_chunk < self.layout.count
 
     def waste_bound(self) -> int:
-        """Worst-case unused pads guaranteed by the analysis above."""
-        tail = self.layout.size(self.layout.count - 1) - self.layout.c
-        return self.m * (2 * self.layout.c - 1) + tail
+        """Exact worst-case unused pads, once the chunk supply is exhausted.
+
+        Not merely an upper bound: ``test_the_waste_bound_is_tight`` builds the
+        schedule that hits this number exactly, for every ``(m, d, n)`` it tries.
+
+        A party strands most by sending *exactly one* message and then going
+        quiet - that one send opens its current chunk, leaving ``c-1`` pads
+        behind, and its delivery pulls a fresh reserve worth ``c`` more, for
+        ``2c-1``.  The party whose delivery exhausts the supply is the
+        exception: its reserve becomes ``None`` rather than another chunk, so
+        it can only strand the ``c-1`` pads left in the chunk it is holding.
+        That caps the total at ``(m-1)(2c-1) + (c-1)``, and the oversized final
+        chunk contributes its remainder wherever it lands.
+        """
+        c = self.layout.c
+        tail = self.layout.size(self.layout.count - 1) - c
+        return (self.m - 1) * (2 * c - 1) + (c - 1) + tail
 
     def waste_breakdown(self) -> dict[str, int]:
         held_reserves = {r for v in self.views for r in v.reserve if r is not None}

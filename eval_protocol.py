@@ -180,7 +180,11 @@ def main() -> None:
     # --- the point of the design: waste does not grow with n -----------------
     scaling = []
     for n in (args.n, args.n * 4, args.n * 16):
-        cell = measure(ChunkReserveProtocol, n=n, d=5, m=5, schedule="single", seeds=1)
+        # one_shot, not single: the flatness claim should be made about the
+        # worst case, not a mild one.
+        cell = measure(
+            ChunkReserveProtocol, n=n, d=5, m=5, schedule="one_shot", seeds=1
+        )
         cell["protocol"] = "chunk-reserve"
         scaling.append(cell)
     table(
